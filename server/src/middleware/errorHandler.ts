@@ -10,7 +10,11 @@ export function errorHandler(
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
       success: false,
-      error: { code: err.code, message: err.message },
+      error: {
+        code: err.code,
+        message: err.message,
+        ...(err.details ? { details: err.details } : {}),
+      },
     });
   }
 
