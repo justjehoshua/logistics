@@ -1,7 +1,7 @@
 import { AppError } from "../../utils/AppError.js";
-import { hashPassword } from "../../utils/password.js";
-import { insertUser } from "./auth.queries.js";
-import type { RegisterInput } from "./auth.schemas.js";
+import { hashPassword, verifyPassword } from "../../utils/password.js";
+import { insertUser, findUserByEmail } from "./auth.queries.js";
+import type { RegisterInput, LoginInput } from "./auth.schemas.js";
 
 export async function registerUser(input: RegisterInput) {
   const passwordHash = await hashPassword(input.password);
@@ -13,7 +13,7 @@ export async function registerUser(input: RegisterInput) {
       phone: input.phone ?? null,
     });
   } catch (err) {
-    // 23505 = PostgreSQL unique_violation. We let the DATABASE enforce uniqueness
+    // 23505 = PostgreSQL unique_violation: the DATABASE enforces unique emails
     if ((err as { code?: string }).code === "23505") {
       throw new AppError(
         409,
@@ -21,6 +21,22 @@ export async function registerUser(input: RegisterInput) {
         "This email is already registered",
       );
     }
-    throw err; // anything else is unexpected: the error handler turns it into a generic 500
+    throw err;
   }
+}
+
+// Computed once at startup. Lets an unknown email cost the same time as a wrong password
+const dummyHashPromise = hashPassword("not-a-real-password");
+
+export async function loginUser(input: LoginInput) {
+  const user = await findUserByEmail(input.email);
+  const hash = user ? user.passwordHash : await dummyHashPromise;
+  const passwordOk = await verifyPassword(input.password, hash); // bcrypt always runs
+
+  if (!user || !passwordOk) {
+    throw new AppError(401, "INVALID_CREDENTIALS", "Invalid email or password");
+  }
+
+  const { passwordHash: _removed, ...safeUser } = user; // never return the hash
+  return safeUser;
 }

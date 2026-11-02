@@ -10,7 +10,26 @@ export async function insertUser(u: {
     `INSERT INTO users (name, email, password_hash, phone)
      VALUES ($1, $2, $3, $4)
      RETURNING id, name, email, phone, role, created_at AS "createdAt"`,
-    [u.name, u.email, u.passwordHash, u.phone], // $1..$4 are sent separately from the SQL: no injection
+    [u.name, u.email, u.passwordHash, u.phone],
   );
   return rows[0];
+}
+
+export async function findUserByEmail(email: string) {
+  const { rows } = await pool.query(
+    `SELECT id, name, email, phone, role, password_hash AS "passwordHash", created_at AS "createdAt"
+     FROM users WHERE email = $1`,
+    [email],
+  );
+  return rows[0] as
+    | {
+        id: string;
+        name: string;
+        email: string;
+        phone: string | null;
+        role: string;
+        passwordHash: string;
+        createdAt: Date;
+      }
+    | undefined;
 }
