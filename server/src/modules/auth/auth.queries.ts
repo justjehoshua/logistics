@@ -70,3 +70,60 @@ export async function revokeAllUserTokens(userId: string) {
     [userId],
   );
 }
+
+// Older unused reset links stop working when a new one is requested
+export async function invalidateUserResetTokens(userId: string) {
+  await pool.query(
+    `UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL`,
+    [userId],
+  );
+}
+
+export async function insertResetToken(
+  userId: string,
+  tokenHash: string,
+  expiresAt: Date,
+) {
+  await pool.query(
+    `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+    [userId, tokenHash, expiresAt],
+  );
+}
+
+// One transaction: mark the token used, change the password, revoke all sessions.
+// Returns false if the token is unknown, already used, or expired.
+export async function resetPasswordWithToken(
+  tokenHash: string,
+  newPasswordHash: string,
+): Promise<boolean> {
+  const client = await pool.connect(); // one connection so BEGIN/COMMIT share a session
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `UPDATE password_reset_tokens SET used_at = now()
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+       RETURNING user_id AS "userId"`,
+      [tokenHash],
+    );
+    if (rows.length === 0) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    const userId = rows[0].userId as string;
+    await client.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [
+      newPasswordHash,
+      userId,
+    ]);
+    await client.query(
+      `UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
+      [userId],
+    );
+    await client.query("COMMIT");
+    return true;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release(); // always give the connection back
+  }
+}

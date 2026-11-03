@@ -6,8 +6,15 @@ import {
   loginUser,
   refreshSession,
   logoutUser,
+  requestPasswordReset,
+  completePasswordReset,
 } from "./auth.service.js";
-import type { RegisterInput, LoginInput } from "./auth.schemas.js";
+import type {
+  RegisterInput,
+  LoginInput,
+  ForgotPasswordInput,
+  ResetPasswordInput,
+} from "./auth.schemas.js";
 
 const isProd = env.NODE_ENV === "production";
 const baseCookie = { httpOnly: true, secure: isProd, sameSite: "lax" as const };
@@ -61,4 +68,24 @@ export async function logout(req: Request, res: Response) {
   await logoutUser(req.cookies?.refresh_token);
   clearAuthCookies(res);
   res.status(204).send();
+}
+
+export async function forgotPassword(req: Request, res: Response) {
+  await requestPasswordReset((req.body as ForgotPasswordInput).email);
+  // Same answer whether or not the email exists
+  res.status(200).json({
+    success: true,
+    data: {
+      message: "If that email is registered, a reset link has been sent",
+    },
+  });
+}
+
+export async function resetPassword(req: Request, res: Response) {
+  const { token, newPassword } = req.body as ResetPasswordInput;
+  await completePasswordReset(token, newPassword);
+  res.status(200).json({
+    success: true,
+    data: { message: "Password updated. Please log in again." },
+  });
 }
