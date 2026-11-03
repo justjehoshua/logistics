@@ -2,10 +2,13 @@ import type { Request, Response, NextFunction } from "express";
 import type { ZodType } from "zod";
 import { AppError } from "../utils/AppError.js";
 
-// A function that RETURNS a middleware, so one file works for every schema
+type Source = "body" | "query" | "params";
+
+// A function that RETURNS a middleware, so one file works for every schema and every request part
 export const validate =
-  (schema: ZodType) => (req: Request, _res: Response, next: NextFunction) => {
-    const result = schema.safeParse(req.body);
+  (schema: ZodType, source: Source = "body") =>
+  (req: Request, res: Response, next: NextFunction) => {
+    const result = schema.safeParse(req[source]);
     if (!result.success) {
       const details = result.error.issues.map((i) => ({
         field: i.path.join("."),
@@ -15,6 +18,10 @@ export const validate =
         new AppError(400, "VALIDATION_ERROR", "Invalid request data", details),
       );
     }
-    req.body = result.data; // replace the raw body with the cleaned one (trimmed, lowercased email)
+    if (source === "body") {
+      req.body = result.data; // cleaned body (trimmed, lowercased, etc.)
+    } else {
+      res.locals[source] = result.data; // req.query is read-only in Express 5, so cleaned values live here
+    }
     next();
   };
