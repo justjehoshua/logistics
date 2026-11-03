@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { randomBytes } from "node:crypto";
 import { env } from "../../config/env.js";
 import { AppError } from "../../utils/AppError.js";
 import { hashPassword, verifyPassword } from "../../utils/password.js";
@@ -16,8 +17,13 @@ import {
   revokeRefreshToken,
   findRefreshToken,
   revokeAllUserTokens,
+  invalidateUserResetTokens,
+  insertResetToken,
+  resetPasswordWithToken,
 } from "./auth.queries.js";
 import type { RegisterInput, LoginInput } from "./auth.schemas.js";
+
+const RESET_TTL_MS = 30 * 60 * 1000; // reset links live 30 minutes
 
 export async function registerUser(input: RegisterInput) {
   const passwordHash = await hashPassword(input.password);
@@ -102,4 +108,40 @@ export async function refreshSession(refreshToken: string | undefined) {
 
 export async function logoutUser(refreshToken: string | undefined) {
   if (refreshToken) await revokeRefreshToken(hashToken(refreshToken)); // unknown token: nothing happens
+}
+
+export async function requestPasswordReset(email: string) {
+  const user = await findUserByEmail(email);
+  if (!user) return; // say nothing: the caller gets the same response either way
+
+  const token = randomBytes(32).toString("hex"); // 64 hex characters, unguessable
+  await invalidateUserResetTokens(user.id);
+  await insertResetToken(
+    user.id,
+    hashToken(token),
+    new Date(Date.now() + RESET_TTL_MS),
+  );
+
+  // No email service yet. DEV ONLY: print the link. Never log it in production
+  if (env.NODE_ENV !== "production") {
+    console.log(
+      `[dev only] password reset link for ${user.email}: ${env.CLIENT_URL}/reset-password?token=${token}`,
+    );
+  }
+}
+
+export async function completePasswordReset(
+  token: string,
+  newPassword: string,
+) {
+  const newHash = await hashPassword(newPassword);
+  const ok = await resetPasswordWithToken(hashToken(token), newHash);
+  if (!ok) {
+    // One message for unknown, used and expired tokens
+    throw new AppError(
+      400,
+      "INVALID_RESET_TOKEN",
+      "This reset link is invalid or has expired",
+    );
+  }
 }
