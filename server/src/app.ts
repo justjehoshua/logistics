@@ -7,6 +7,7 @@ import { AppError } from "./utils/AppError.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { usersRouter } from "./modules/users/users.routes.js";
 import { shipmentsRouter } from "./modules/shipments/shipments.routes.js";
+import { trackingRouter } from "./modules/tracking/tracking.routes.js";
 
 export const app = express();
 
@@ -21,6 +22,7 @@ app.get("/api/v1/health", (req, res) => {
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", usersRouter);
 app.use("/api/v1/shipments", shipmentsRouter);
+app.use("/api/v1/tracking", trackingRouter);
 app.use((req, res, next) =>
   next(new AppError(404, "NOT_FOUND", "Route not found")),
 );
